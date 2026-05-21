@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CoachSpace</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main id="authView" class="auth-view">
+      <section class="auth-copy">
+        <p class="eyebrow">Coaching MVP</p>
+        <h1>CoachSpace</h1>
+        <p>Run classes, publish learning material, book live sessions, and keep coaching conversations in one place.</p>
+      </section>
+      <section class="auth-panel" aria-label="Authentication">
+        <div class="switcher" role="tablist">
+          <button class="active" id="loginTab" type="button">Login</button>
+          <button id="registerTab" type="button">Register</button>
+        </div>
+
+        <form id="loginForm" class="stack">
+          <label>Email<input required type="email" name="email" autocomplete="email" /></label>
+          <label>Password<input required type="password" name="password" autocomplete="current-password" /></label>
+          <button class="primary" type="submit">Login</button>
+        </form>
+
+        <form id="registerForm" class="stack hidden">
+          <label>Name<input required minlength="2" name="name" autocomplete="name" /></label>
+          <label>Email<input required type="email" name="email" autocomplete="email" /></label>
+          <label>Password<input required minlength="8" type="password" name="password" autocomplete="new-password" /></label>
+          <label>Role
+            <select name="role">
+              <option value="student">Student</option>
+              <option value="teacher">Teacher</option>
+            </select>
+          </label>
+          <button class="primary" type="submit">Create Account</button>
+        </form>
+        <p id="authError" class="error" role="alert"></p>
+      </section>
+    </main>
+
+    <main id="appView" class="app-view hidden">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">CoachSpace</p>
+          <h2 id="userName">Dashboard</h2>
+          <p id="userRole" class="role-pill"></p>
+        </div>
+        <nav class="nav">
+          <button class="active" data-view="library">Library</button>
+          <button data-view="sessions">Live Sessions</button>
+          <button data-view="messages">Messages</button>
+        </nav>
+        <button id="logoutBtn" class="ghost" type="button">Logout</button>
+      </aside>
+
+      <section class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="sectionKicker">Learning Library</p>
+            <h1 id="sectionTitle">Courses and Resources</h1>
+          </div>
+          <button id="refreshBtn" class="secondary" type="button">Refresh</button>
+        </header>
+
+        <section id="libraryView" class="view stack">
+          <form id="uploadForm" class="tool-panel hidden">
+            <h3>Upload learning material</h3>
+            <div class="grid-2">
+              <label>Title<input required name="title" /></label>
+              <label>Type
+                <select name="media_type">
+                  <option value="video">Video</option>
+                  <option value="audio">Audio</option>
+                  <option value="pdf">PDF Book</option>
+                </select>
+              </label>
+            </div>
+            <label>Description<textarea name="description" rows="3"></textarea></label>
+            <label>File<input required name="file" type="file" accept="video/*,audio/*,application/pdf" /></label>
+            <button class="primary" type="submit">Upload</button>
+          </form>
+
+          <div class="filter-row" id="mediaFilters">
+            <button class="active" data-type="">All</button>
+            <button data-type="video">Videos</button>
+            <button data-type="audio">Audio</button>
+            <button data-type="pdf">PDFs</button>
+          </div>
+          <div id="mediaList" class="media-grid"></div>
+        </section>
+
+        <section id="sessionsView" class="view stack hidden">
+          <form id="sessionForm" class="tool-panel hidden">
+            <h3>Create live session</h3>
+            <div class="grid-2">
+              <label>Title<input required name="title" /></label>
+              <label>Start time<input required name="starts_at" type="datetime-local" /></label>
+              <label>Duration minutes<input required name="duration_minutes" type="number" min="15" max="240" value="60" /></label>
+              <label>Capacity<input required name="capacity" type="number" min="1" max="500" value="30" /></label>
+            </div>
+            <label>Meeting URL<input name="meeting_url" placeholder="Leave blank to auto-create a Jitsi room" /></label>
+            <label>Description<textarea name="description" rows="3"></textarea></label>
+            <button class="primary" type="submit">Schedule Session</button>
+          </form>
+          <div id="sessionList" class="list"></div>
+          <h3>Your bookings</h3>
+          <div id="bookingList" class="list compact"></div>
+        </section>
+
+        <section id="messagesView" class="view stack hidden">
+          <div class="message-layout">
+            <aside class="people">
+              <label>Start conversation
+                <select id="recipientSelect"></select>
+              </label>
+              <button id="loadConversationBtn" class="secondary" type="button">Open Chat</button>
+              <div id="conversationList" class="conversation-list"></div>
+            </aside>
+            <section class="chat">
+              <div id="chatHeader" class="chat-header">Choose a person</div>
+              <div id="messageList" class="message-list"></div>
+              <form id="messageForm" class="message-form">
+                <input name="body" placeholder="Write a message" autocomplete="off" />
+                <button class="primary" type="submit">Send</button>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <p id="toast" class="toast" role="status"></p>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

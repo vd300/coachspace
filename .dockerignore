@@ -1,0 +1,14 @@
+.git/
+.vscode/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+data/
+uploads/*
+!uploads/.gitkeep
+aws/
+awscliv2.zip
+coachspace.zip
+.DS_Store
