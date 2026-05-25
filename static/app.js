@@ -19,7 +19,7 @@ function showToast(message, isError = false) {
   setTimeout(() => toast.classList.remove("show"), 3000);
 }
 
-async function api(path, options = {}) {
+async function api(path, options = {}) { //after login, all API calls will go through this function which adds the auth token to the headers and handles errors globally
   const headers = options.headers || {};
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
@@ -41,7 +41,7 @@ function formDataObject(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
 
-function saveAuth(payload) {
+function saveAuth(payload) { //save auth token and user info to state and localStorage after successful login or registration
   state.token = payload.token;
   state.user = payload.user;
   localStorage.setItem("coachspace_token", payload.token);
@@ -64,7 +64,7 @@ function setAuthMode(mode) {
   $("#authError").textContent = "";
 }
 
-function renderShell() {
+function renderShell() { //app switches between login/register view and main app view based on auth state, and updates UI elements based on user role
   const loggedIn = Boolean(state.token && state.user);
   $("#authView").classList.toggle("hidden", loggedIn);
   $("#appView").classList.toggle("hidden", !loggedIn);
@@ -129,46 +129,7 @@ function escapeHtml(value) {
 
 async function uploadLearningMaterial(form) {
   const formData = new FormData(form);
-  const file = formData.get("file");
-  const payload = {
-    title: formData.get("title"),
-    description: formData.get("description") || "",
-    media_type: formData.get("media_type"),
-    file_name: file.name,
-    content_type: file.type || "",
-    size_bytes: file.size,
-  };
-
-  const presign = await api("/api/media/presign", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-
-  if (presign.storage_backend !== "s3") {
-    await api("/api/media", { method: "POST", body: formData });
-    return;
-  }
-
-  const s3FormData = new FormData();
-  Object.entries(presign.fields).forEach(([key, value]) => s3FormData.append(key, value));
-  s3FormData.append("file", file);
-
-  const uploadResponse = await fetch(presign.url, {
-    method: "POST",
-    body: s3FormData,
-  });
-  if (!uploadResponse.ok) {
-    throw new Error("Upload to S3 failed");
-  }
-
-  await api("/api/media/complete", {
-    method: "POST",
-    body: JSON.stringify({
-      ...payload,
-      content_type: presign.content_type,
-      storage_key: presign.storage_key,
-    }),
-  });
+  await api("/api/media", { method: "POST", body: formData });
 }
 
 async function loadMedia() {
@@ -281,7 +242,7 @@ async function loadConversation(peerId) {
 $("#loginTab").addEventListener("click", () => setAuthMode("login"));
 $("#registerTab").addEventListener("click", () => setAuthMode("register"));
 
-$("#loginForm").addEventListener("submit", async (event) => {
+$("#loginForm").addEventListener("submit", async (event) => { //submits the login form to the fastAPI, calling the API and saving auth state on success
   event.preventDefault();
   try {
     saveAuth(await api("/api/auth/login", { method: "POST", body: JSON.stringify(formDataObject(event.target)) }));

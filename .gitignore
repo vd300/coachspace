@@ -1,8 +1,11 @@
 __pycache__/
 *.py[cod]
 .env
+.env.*
 .venv/
 venv/
 data/
 uploads/*
 !uploads/.gitkeep
+coachspace.tar.gz
+coachspace.zip

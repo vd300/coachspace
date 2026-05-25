@@ -30,15 +30,10 @@ TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
 ALLOWED_ROLES = {"student", "teacher"}
 ALLOWED_MEDIA_TYPES = {"video", "audio", "pdf"}
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
-STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "s3" if os.getenv("S3_BUCKET_NAME") else "local").lower()
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "")
-AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
-S3_PUBLIC_BASE_URL = os.getenv("S3_PUBLIC_BASE_URL", "").rstrip("/")
-S3_PRESIGNED_URL_SECONDS = int(os.getenv("S3_PRESIGNED_URL_SECONDS", "3600"))
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Coaching App MVP", version="1.0.0")
+app = FastAPI(title="Coaching App MVP", version="1.0.0") #app creation with title and version
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
@@ -46,7 +41,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static") #mounting the static files directory to serve frontend assets
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
@@ -101,8 +96,6 @@ def init_db() -> None:
                 original_name TEXT NOT NULL,
                 content_type TEXT NOT NULL,
                 size_bytes INTEGER NOT NULL,
-                storage_backend TEXT NOT NULL DEFAULT 'local',
-                storage_key TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -144,14 +137,6 @@ def init_db() -> None:
                 read_at TEXT
             );
             """
-        )
-        media_columns = {row["name"] for row in conn.execute("PRAGMA table_info(media_items)").fetchall()}
-        if "storage_backend" not in media_columns:
-            conn.execute("ALTER TABLE media_items ADD COLUMN storage_backend TEXT NOT NULL DEFAULT 'local'")
-        if "storage_key" not in media_columns:
-            conn.execute("ALTER TABLE media_items ADD COLUMN storage_key TEXT")
-        conn.execute(
-            "UPDATE media_items SET storage_key = file_name WHERE storage_key IS NULL OR storage_key = ''"
         )
 
 
@@ -196,26 +181,13 @@ class MessagePayload(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
 
 
-class PresignMediaPayload(BaseModel):
-    title: str = Field(min_length=2, max_length=140)
-    description: str = Field(default="", max_length=1200)
-    media_type: Literal["video", "audio", "pdf"]
-    file_name: str = Field(min_length=1, max_length=255)
-    content_type: str = Field(default="", max_length=120)
-    size_bytes: int = Field(gt=0, le=MAX_UPLOAD_BYTES)
-
-
-class CompleteMediaPayload(PresignMediaPayload):
-    storage_key: str = Field(min_length=1, max_length=600)
-
-
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000)
     return f"pbkdf2_sha256$200000${salt}${digest.hex()}"
 
 
-def verify_password(password: str, encoded: str) -> bool:
+def verify_password(password: str, encoded: str) -> bool: #verify the password
     try:
         algorithm, iterations, salt, expected = encoded.split("$", 3)
         if algorithm != "pbkdf2_sha256":
@@ -235,7 +207,7 @@ def b64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + padding)
 
 
-def create_token(user: sqlite3.Row) -> str:
+def create_token(user: sqlite3.Row) -> str: #create a JWT-like token with user ID, role, and expiration
     payload = {
         "sub": user["id"],
         "role": user["role"],
@@ -270,24 +242,6 @@ def clean_user(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def s3_client() -> Any:
-    if not S3_BUCKET_NAME:
-        raise HTTPException(status_code=500, detail="S3_BUCKET_NAME is not configured")
-    try:
-        import boto3
-    except ImportError as exc:
-        raise HTTPException(status_code=500, detail="boto3 is required for S3 storage") from exc
-    return boto3.client("s3", region_name=AWS_REGION)
-
-
-def configured_storage_backend() -> str:
-    if STORAGE_BACKEND == "s3":
-        if not S3_BUCKET_NAME:
-            raise HTTPException(status_code=500, detail="S3_BUCKET_NAME is required when STORAGE_BACKEND=s3")
-        return "s3"
-    return "local"
-
-
 def normalized_content_type(file_name: str, content_type: str | None) -> str:
     return content_type or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
 
@@ -307,22 +261,7 @@ def validate_media_file(media_type: str, file_name: str, content_type: str, size
         raise HTTPException(status_code=400, detail=f"File does not look like a {media_type}")
 
 
-def s3_storage_key(user_id: int, file_name: str) -> str:
-    suffix = Path(file_name).suffix.lower()
-    return f"media/{user_id}/{uuid.uuid4().hex}{suffix}"
-
-
 def media_url(row: sqlite3.Row) -> str:
-    storage_backend = row["storage_backend"] if "storage_backend" in row.keys() else "local"
-    storage_key = row["storage_key"] if "storage_key" in row.keys() and row["storage_key"] else row["file_name"]
-    if storage_backend == "s3":
-        if S3_PUBLIC_BASE_URL:
-            return f"{S3_PUBLIC_BASE_URL}/{storage_key}"
-        return s3_client().generate_presigned_url(
-            "get_object",
-            Params={"Bucket": S3_BUCKET_NAME, "Key": storage_key},
-            ExpiresIn=S3_PRESIGNED_URL_SECONDS,
-        )
     return f"/uploads/{row['file_name']}"
 
 
@@ -353,17 +292,15 @@ def insert_media_item(
     original_name: str,
     content_type: str,
     size_bytes: int,
-    storage_backend: str,
-    storage_key: str,
 ) -> sqlite3.Row:
     cursor = conn.execute(
         """
         INSERT INTO media_items
             (
                 teacher_id, title, description, media_type, file_name, original_name,
-                content_type, size_bytes, storage_backend, storage_key, created_at
+                content_type, size_bytes, created_at
             )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
@@ -374,8 +311,6 @@ def insert_media_item(
             original_name,
             content_type,
             size_bytes,
-            storage_backend,
-            storage_key,
             utc_now(),
         ),
     )
@@ -412,7 +347,7 @@ def session_response(row: sqlite3.Row, user: dict[str, Any] | None = None) -> di
     }
 
 
-def current_user(request: Request) -> dict[str, Any]:
+def current_user(request: Request) -> dict[str, Any]: #This function checks the incoming HTTP request and returns the logged-in user. It looks for the "Authorization" header, verifies the token, and retrieves the user from the database. If anything goes wrong (missing header, invalid token, user not found), it raises an HTTP 401 error.
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
@@ -450,7 +385,7 @@ def get_session_row(conn: sqlite3.Connection, session_id: int) -> sqlite3.Row:
     return row
 
 
-@app.get("/", include_in_schema=False)
+@app.get("/", include_in_schema=False) #redirect root URL to the frontend
 def root() -> RedirectResponse:
     return RedirectResponse("/static/index.html")
 
@@ -483,7 +418,7 @@ def register(payload: RegisterPayload) -> dict[str, Any]:
     return {"token": create_token(row), "user": clean_user(row)}
 
 
-@app.post("/api/auth/login")
+@app.post("/api/auth/login") #receives login requests, verifies credentials, and returns an auth token on success
 def login(payload: LoginPayload) -> dict[str, Any]:
     with db() as conn:
         row = conn.execute("SELECT * FROM users WHERE email = ?", (payload.email.lower(),)).fetchone()
@@ -513,75 +448,6 @@ def list_users(
     return [clean_user(row) for row in rows]
 
 
-@app.post("/api/media/presign")
-def presign_media_upload(
-    payload: PresignMediaPayload,
-    user: Annotated[dict[str, Any], Depends(require_role("teacher"))],
-) -> dict[str, Any]:
-    content_type = normalized_content_type(payload.file_name, payload.content_type)
-    validate_media_file(payload.media_type, payload.file_name, content_type, payload.size_bytes)
-
-    if configured_storage_backend() != "s3":
-        return {"storage_backend": "local"}
-
-    storage_key = s3_storage_key(user["id"], payload.file_name)
-    post = s3_client().generate_presigned_post(
-        Bucket=S3_BUCKET_NAME,
-        Key=storage_key,
-        Fields={"Content-Type": content_type},
-        Conditions=[
-            {"Content-Type": content_type},
-            ["content-length-range", 1, MAX_UPLOAD_BYTES],
-        ],
-        ExpiresIn=S3_PRESIGNED_URL_SECONDS,
-    )
-    return {
-        "storage_backend": "s3",
-        "url": post["url"],
-        "fields": post["fields"],
-        "storage_key": storage_key,
-        "content_type": content_type,
-    }
-
-
-@app.post("/api/media/complete")
-def complete_media_upload(
-    payload: CompleteMediaPayload,
-    user: Annotated[dict[str, Any], Depends(require_role("teacher"))],
-) -> dict[str, Any]:
-    if configured_storage_backend() != "s3":
-        raise HTTPException(status_code=400, detail="Direct upload completion is only used for S3 storage")
-
-    expected_prefix = f"media/{user['id']}/"
-    if not payload.storage_key.startswith(expected_prefix):
-        raise HTTPException(status_code=400, detail="Invalid storage key")
-
-    content_type = normalized_content_type(payload.file_name, payload.content_type)
-    validate_media_file(payload.media_type, payload.file_name, content_type, payload.size_bytes)
-
-    try:
-        head = s3_client().head_object(Bucket=S3_BUCKET_NAME, Key=payload.storage_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Uploaded file was not found in S3") from exc
-
-    size_bytes = int(head.get("ContentLength") or payload.size_bytes)
-    with db() as conn:
-        row = insert_media_item(
-            conn,
-            user_id=user["id"],
-            title=payload.title,
-            description=payload.description,
-            media_type=payload.media_type,
-            file_name=payload.storage_key,
-            original_name=payload.file_name,
-            content_type=content_type,
-            size_bytes=size_bytes,
-            storage_backend="s3",
-            storage_key=payload.storage_key,
-        )
-    return media_response(row)
-
-
 @app.post("/api/media")
 async def upload_media(
     user: Annotated[dict[str, Any], Depends(require_role("teacher"))],
@@ -595,17 +461,10 @@ async def upload_media(
     content_type = normalized_content_type(original_name, file.content_type)
     validate_media_file(media_type, original_name, content_type, len(contents))
 
-    storage_backend = configured_storage_backend()
-    if storage_backend == "s3":
-        stored_name = s3_storage_key(user["id"], original_name)
-        s3_client().put_object(Bucket=S3_BUCKET_NAME, Key=stored_name, Body=contents, ContentType=content_type)
-        storage_key = stored_name
-    else:
-        suffix = Path(original_name).suffix.lower()
-        stored_name = f"{uuid.uuid4().hex}{suffix}"
-        destination = UPLOAD_DIR / stored_name
-        destination.write_bytes(contents)
-        storage_key = stored_name
+    suffix = Path(original_name).suffix.lower()
+    stored_name = f"{uuid.uuid4().hex}{suffix}"
+    destination = UPLOAD_DIR / stored_name
+    destination.write_bytes(contents)
 
     with db() as conn:
         row = insert_media_item(
@@ -618,8 +477,6 @@ async def upload_media(
             original_name=original_name,
             content_type=content_type,
             size_bytes=len(contents),
-            storage_backend=storage_backend,
-            storage_key=storage_key,
         )
     return media_response(row)
 
@@ -889,13 +746,6 @@ def conversations(user: Annotated[dict[str, Any], Depends(current_user)]) -> lis
 
 @app.get("/api/files/{file_name:path}", include_in_schema=False, response_model=None)
 def download_file(file_name: str, user: Annotated[dict[str, Any], Depends(current_user)]) -> Any:
-    if configured_storage_backend() == "s3":
-        url = s3_client().generate_presigned_url(
-            "get_object",
-            Params={"Bucket": S3_BUCKET_NAME, "Key": file_name},
-            ExpiresIn=S3_PRESIGNED_URL_SECONDS,
-        )
-        return RedirectResponse(url)
     target = (UPLOAD_DIR / file_name).resolve()
     if UPLOAD_DIR.resolve() not in target.parents or not target.exists():
         raise HTTPException(status_code=404, detail="File not found")

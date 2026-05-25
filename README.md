@@ -36,33 +36,22 @@ Open `http://127.0.0.1:8000`.
 
 ## Deployment
 
-### AWS
+### Render
 
-For AWS, use Docker on Elastic Beanstalk or ECS/Fargate, and store uploaded media in S3:
+This repo includes `render.yaml` for a Render Blueprint. It creates a Python web service, generates `APP_SECRET`, and mounts a persistent disk for SQLite data and uploaded media.
 
 ```text
-STORAGE_BACKEND=s3
-S3_BUCKET_NAME=your-media-bucket
-AWS_REGION=your-aws-region
-APP_SECRET=replace-this-with-a-long-random-secret
+DATABASE_URL=/opt/render/project/src/persistent/coaching.db
+UPLOAD_DIR=/opt/render/project/src/persistent/uploads
 ```
 
-See `AWS_DEPLOYMENT.md` for the full setup, including S3 CORS and IAM permissions.
+Create a Blueprint from this repo in Render and deploy it. The app writes all runtime data under the mounted disk path above.
 
 ### Docker
 
 ```bash
 docker build -t coachspace .
 docker run -p 8000:8000 -e APP_SECRET="replace-this" coachspace
-```
-
-### Render
-
-This repo includes `render.yaml`. Create a Render Blueprint from the repo and Render will generate `APP_SECRET`. For persistent production uploads and SQLite data, attach a persistent disk and point:
-
-```text
-DATABASE_URL=/var/data/coaching.db
-UPLOAD_DIR=/var/data/uploads
 ```
 
 ## API Overview

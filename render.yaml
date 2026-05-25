@@ -1,12 +1,19 @@
 services:
   - type: web
     name: coaching-mvp
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    runtime: python
+    plan: starter
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    disk:
+      name: coaching-data
+      mountPath: /opt/render/project/src/persistent
+      sizeGB: 1
     envVars:
       - key: APP_SECRET
         generateValue: true
       - key: DATABASE_URL
-        value: data/coaching.db
+        value: /opt/render/project/src/persistent/coaching.db
+      - key: UPLOAD_DIR
+        value: /opt/render/project/src/persistent/uploads
